@@ -12,18 +12,15 @@ public:
     static constexpr size_t MaxMessageLen = 20;
     static constexpr size_t SlotSize = MaxMessageLen + 1; // +'\0'
 
-#pragma pack(push, 1)
     struct SharedHeader {
         LONG capacity;
         LONG head;
         LONG tail;
     };
-#pragma pack(pop)
 
     SharedQueue() = default;
     ~SharedQueue() { close(); }
 
-    // Создаёт новый файл/очередь (Receiver)
     bool create(const std::wstring& filePath, LONG capacity) {
         close();
         HANDLE hFile = CreateFileW(
@@ -64,7 +61,6 @@ public:
         return true;
     }
 
-    // Открывает существующий файл/очередь (Sender)
     bool open(const std::wstring& filePath) {
         close();
         HANDLE hFile = CreateFileW(

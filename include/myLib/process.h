@@ -20,8 +20,8 @@ public:
 	Process(const Process&) = delete;
 	Process& operator=(const Process&) = delete;
 
-	Process(Process&& other) noexcept = default;
-	Process& operator=(Process&&) noexcept = default;
+	Process(Process&& other) noexcept;
+	Process& operator=(Process&& other) noexcept;
 	~Process() noexcept { close(); }
 	
 	void wait(DWORD wait=INFINITE);

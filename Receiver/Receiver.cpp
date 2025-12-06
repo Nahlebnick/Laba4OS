@@ -8,6 +8,7 @@
 #include "myLib/inputUtils.h"
 #include "myLib/semaphore.h"
 #include "myLib/process.h"
+#include "myLib/SharedHeader.h"
 
 const int MAX_MESSAGE_LEN = 20;
 
@@ -17,42 +18,27 @@ std::wstring BuildSenderCommandLine(const std::wstring& senderExe, const std::ws
     return cmd;
 }
 
-std::wstring string_to_wstring(const std::string& str, UINT code_page = CP_UTF8) {
+std::wstring string_to_wstring(const std::string& str) {
     if (str.empty()) return L"";
-
-    int wide_size = MultiByteToWideChar(code_page, 0, str.c_str(), -1, nullptr, 0);
-
-    if (wide_size == 0) return L"";
-
-    std::wstring wide_str(wide_size, 0);
-    int wide_size = MultiByteToWideChar(code_page, 0, str.c_str(), -1, &wide_str[0], wide_size);
-
-    wide_str.pop_back();
-    return wide_str;
+    int size_needed = MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), NULL, 0);
+    std::wstring wstrTo(size_needed, 0);
+    MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), &wstrTo[0], size_needed);
+    return wstrTo;
 }
 
-int main(int argc, char* argv[])
+int main()
 {
-    if (argc != 3)
-    {
-        std::cerr << "Incorrect data passed to the process";
-        return -1;
-    }
+    std::cout << "Enter file path: ";
+    std::string filePath;
+    std::cin >> filePath;
 
-    std::string filePath = argv[1];
-    int recordCount = std::stoi(argv[2]);
+    std::cout << "Enter record count: ";
+    int recordCount;
+    inputValue(recordCount);
 
     if (recordCount < 0)
     {
-        std::cerr << "Count of records should be positive!";
-        return -1;
-    }
-
-    FILE* f = fopen(filePath.c_str(), "wb");
-
-    if (!f)
-    {
-        std::cerr << "Failed to open file!";
+        std::cerr << "Count of records should be positive!\n";
         return -1;
     }
 
@@ -63,21 +49,36 @@ int main(int argc, char* argv[])
 
     if (processCount < 0)
     {
-        std::cerr << "Count of processes should be positive!";
+        std::cerr << "Count of processes should be positive!\n";
         return -1;
     }
 
-    myLib::Semaphore ReadySem((LONG)0, (LONG)1024, L"ReadySemaphore");
-    myLib::Semaphore EmptySem((LONG)0, (LONG)recordCount, L"EmptySemaphore");
-    myLib::Semaphore FullSem((LONG)0, (LONG)recordCount, L"FullSemaphore");
+    SharedQueue s_q;
+    if (s_q.create(string_to_wstring(filePath), recordCount))
+    {
+        std::cerr << "SharedQueue::create failed!\n";
+        return -1;
+    }
+    myLib::Semaphore ReadySem;
+    ReadySem.create((LONG)0, (LONG)1024, L"ReadySemaphore");
+    myLib::Semaphore EmptySem;
+    EmptySem.create((LONG)0, (LONG)recordCount, L"EmptySemaphore");
+    myLib::Semaphore FullSem;
+    FullSem.create((LONG)0, (LONG)recordCount, L"FullSemaphore");
     HANDLE hMutex = CreateMutex(NULL, false, L"MTX");
 
-    std::vector<myLib::Process> processes;
+    if (!hMutex)
+    {
+        std::cerr << "CreateMutex failed!\n";
+        return -1;
+    }
+
+    std::vector<std::unique_ptr<myLib::Process>> processes;
 
     for (int i = 0; i < processCount; i++)
     {
-        myLib::Process proc(BuildSenderCommandLine(L"sender.exe", string_to_wstring(filePath)));
-        processes.push_back(proc);
+        auto proc = std::make_unique<myLib::Process>(BuildSenderCommandLine(L"sender.exe", string_to_wstring(filePath)));
+        processes.push_back(std::move(proc));
     }
 
     std::cout << "[Receiver] Waiting for Sender...\n";
@@ -96,23 +97,26 @@ int main(int argc, char* argv[])
 
         if (command[0] == 'R' || command[0] == 'r')
         {
-            DWORD waitRes = FullSem.try_wait();
-            if (waitRes != WAIT_OBJECT_0)
-            {
-                std::cerr << "Ошибка ожидания FullSem.\n";
-                break;
-            }
+            FullSem.wait();
+            
 
             WaitForSingleObject(hMutex, INFINITE);
-
+            std::string message;
+            if (!s_q.read(message))
+            {
+                std::cerr << "Error while reading message!\n";
+            }
             ReleaseMutex(hMutex);
 
+            EmptySem.release(1);
 
+            std::string msg(message.begin(), message.end());
+            std::cout << "[Receiver] Received message: " << msg << "\n";
+            break;
         }
         else if (command[0] == 'Q' || command[0] == 'q')
         {
             running = false;
-            break;
         }
         else
         {
@@ -120,5 +124,10 @@ int main(int argc, char* argv[])
             continue;
         }
     }
+
+    s_q.close();
+    CloseHandle(hMutex);
+
+    return 0;
 
 }

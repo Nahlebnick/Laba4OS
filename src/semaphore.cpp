@@ -1,6 +1,6 @@
 #include "myLib/semaphore.h"
 
-myLib::Semaphore::Semaphore(LONG lInitialCount, LONG lMaximumCount, std::wstring lpName)
+void myLib::Semaphore::create(LONG lInitialCount, LONG lMaximumCount, std::wstring lpName)
 {
 	hSemaphore = CreateSemaphore(NULL, lInitialCount, lMaximumCount, lpName.c_str());
 	if (!hSemaphore)
@@ -10,7 +10,7 @@ myLib::Semaphore::Semaphore(LONG lInitialCount, LONG lMaximumCount, std::wstring
 	}
 }
 
-myLib::Semaphore::Semaphore(DWORD desiredAccess, bool InheritHandle, std::wstring lpName)
+void myLib::Semaphore::open(DWORD desiredAccess, bool InheritHandle, std::wstring lpName)
 {
 	hSemaphore = OpenSemaphore(desiredAccess, InheritHandle, lpName.c_str());
 	if (!hSemaphore)
@@ -38,16 +38,18 @@ void myLib::Semaphore::wait(DWORD wait)
 
 DWORD myLib::Semaphore::try_wait(DWORD wait)
 {
+	DWORD res = 0;
 	if (hSemaphore)
 	{
 		DWORD res = WaitForSingleObject(hSemaphore, wait);
 		close();
 	}
+	return res;
 }
 
 void myLib::Semaphore::release(LONG ReleaseCount)
 {
-	if (!ReleaseSemaphore(hSemaphore, ReleaseCount, nullptr)) 
+	if (!ReleaseSemaphore(hSemaphore, ReleaseCount, nullptr))
 		throw std::runtime_error("ReleaseSemaphore failed");
 }
 

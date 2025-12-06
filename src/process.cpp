@@ -1,23 +1,44 @@
 #include "myLib/process.h"
+#include <vector>
+#include <system_error>
+#include <stdexcept>
 
-myLib::Process::Process(const std::wstring& commandLine, bool bInheritHandles = FALSE, DWORD dwCreationFlags = 0, const std::wstring& currentDirectory)
+
+myLib::Process::Process(const std::wstring& commandLine, bool bInheritHandles, DWORD dwCreationFlags, const std::wstring& currentDirectory) 
 {
-    wchar_t* wtext = new wchar_t[commandLine.size()+11];
-    wcscpy(wtext, commandLine.c_str());
-    LPWSTR lpszCommandLine = wtext;
+    if (commandLine.empty()) {
+        throw std::invalid_argument("Command line cannot be empty");
+    }
 
-    STARTUPINFO si = { };
+    std::vector<wchar_t> cmdBuffer(commandLine.begin(), commandLine.end());
+    cmdBuffer.push_back(0);
+
+    STARTUPINFO si = { sizeof(STARTUPINFO) };
     pi = {};
 
-    ZeroMemory(&si, sizeof(STARTUPINFO));
-    si.cb = sizeof(STARTUPINFO);
+    LPCWSTR lpCurrDir = currentDirectory.empty() ? nullptr : currentDirectory.c_str();
 
-    if (!CreateProcess(NULL, lpszCommandLine,
-        NULL, NULL, bInheritHandles, dwCreationFlags, NULL, NULL, &si, &pi))
+    if (!CreateProcess(NULL, cmdBuffer.data(),
+        NULL, NULL, bInheritHandles, dwCreationFlags, NULL, lpCurrDir, &si, &pi))
     {
         throw std::system_error(GetLastError(), std::system_category(), "CreateProcess failed" );
     }
-    delete[] wtext;
+}
+
+myLib::Process::Process(Process&& other) noexcept
+{
+    pi = other.pi;
+    other.pi = { nullptr, nullptr, 0, 0 };
+}
+
+myLib::Process& myLib::Process::operator=(Process&& other) noexcept
+{
+    if (this != &other) {
+        close();
+        pi = other.pi;
+        other.pi = { nullptr, nullptr, 0, 0 };
+    }
+    return *this;
 }
 
 void myLib::Process::wait(DWORD wait)
